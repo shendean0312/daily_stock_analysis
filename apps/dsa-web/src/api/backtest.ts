@@ -6,6 +6,7 @@ import type {
   BacktestResultsResponse,
   BacktestResultItem,
   PerformanceMetrics,
+  HistoryTrackingResponse,
 } from '../types/backtest';
 
 // ============ API ============
@@ -98,5 +99,25 @@ export const backtestApi = {
       }
       throw err;
     }
+  },
+
+  /**
+   * Get history tracking data - 30-day history with backtest results
+   */
+  getHistoryTracking: async (params: {
+    code?: string;
+    days?: number;
+  } = {}): Promise<HistoryTrackingResponse> => {
+    const queryParams: Record<string, string | number> = {};
+    if (params.code) queryParams.stock_code = params.code;
+    if (params.days) queryParams.days = params.days;
+    else queryParams.days = 30;
+
+    const response = await apiClient.get<Record<string, unknown>>(
+      '/api/v1/backtest/history-tracking',
+      { params: queryParams },
+    );
+
+    return toCamelCase<HistoryTrackingResponse>(response.data);
   },
 };

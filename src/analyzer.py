@@ -902,6 +902,7 @@ class GeminiAnalyzer:
             news_context: 预先搜索的新闻内容
         """
         code = context.get('code', 'Unknown')
+        from src.memory_patch import build_history_section
         
         # 优先使用上下文中的股票名称（从 realtime_quote 获取）
         stock_name = context.get('stock_name', name)
@@ -1031,6 +1032,10 @@ class GeminiAnalyzer:
             prompt += """
 未搜索到该股票近期的相关新闻。请主要依据技术面数据进行分析。
 """
+# === 记忆注入：历史分析追踪 ===
+        history_section = build_history_section(code)
+        if history_section:
+            prompt += history_section
 
         # 注入缺失数据警告
         if context.get('data_missing'):

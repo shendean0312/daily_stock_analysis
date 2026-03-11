@@ -93,3 +93,23 @@ export interface PerformanceMetrics {
   adviceBreakdown: Record<string, unknown>;
   diagnostics: Record<string, unknown>;
 }
+
+// ============ History Tracking ============
+
+export interface HistoryTrackingItem {
+  historyId: number;
+  code: string;
+  date: string;
+  sentimentScore?: number;
+  operationAdvice?: string;
+  backtestResult?: {
+    outcome?: string;
+    simulatedReturnPct?: number;
+    stockReturnPct?: number;
+    evalStatus?: string;
+  };
+}
+
+export interface HistoryTrackingResponse {
+  items: HistoryTrackingItem[];
+}

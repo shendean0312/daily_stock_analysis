@@ -92,3 +92,16 @@ class PerformanceMetrics(BaseModel):
     advice_breakdown: Dict[str, Any] = Field(default_factory=dict)
     diagnostics: Dict[str, Any] = Field(default_factory=dict)
 
+
+class HistoryTrackingItem(BaseModel):
+    history_id: int
+    code: str
+    date: str
+    sentiment_score: Optional[float] = None
+    operation_advice: Optional[str] = None
+    backtest_result: Optional[Dict[str, Any]] = None
+
+
+class HistoryTrackingResponse(BaseModel):
+    items: List[HistoryTrackingItem] = Field(default_factory=list)
+

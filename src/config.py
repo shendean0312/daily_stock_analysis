@@ -239,6 +239,7 @@ class Config:
 
     # === 回测配置 ===
     backtest_enabled: bool = True
+    backtest_days_ago: int = 5  # 回测N天前（交易日）产生的分析记录
     backtest_eval_window_days: int = 10
     backtest_min_age_days: int = 14
     backtest_engine_version: str = "v1"
@@ -662,6 +663,7 @@ class Config:
             database_path=os.getenv('DATABASE_PATH', './data/stock_analysis.db'),
             save_context_snapshot=os.getenv('SAVE_CONTEXT_SNAPSHOT', 'true').lower() == 'true',
             backtest_enabled=os.getenv('BACKTEST_ENABLED', 'true').lower() == 'true',
+            backtest_days_ago=int(os.getenv('BACKTEST_DAYS_AGO', '5')),
             backtest_eval_window_days=int(os.getenv('BACKTEST_EVAL_WINDOW_DAYS', '10')),
             backtest_min_age_days=int(os.getenv('BACKTEST_MIN_AGE_DAYS', '14')),
             backtest_engine_version=os.getenv('BACKTEST_ENGINE_VERSION', 'v1'),

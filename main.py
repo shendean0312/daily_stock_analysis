@@ -205,6 +205,13 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        '--backtest-days-ago',
+        type=int,
+        default=None,
+        help='回测N天前（交易日）产生的分析记录，默认使用配置值'
+    )
+
+    parser.add_argument(
         '--backtest-force',
         action='store_true',
         help='强制回测（即使已有回测结果也重新计算）'
@@ -427,6 +434,7 @@ def run_full_analysis(
                 service = BacktestService()
                 stats = service.run_backtest(
                     force=False,
+                    days_ago=getattr(config, 'backtest_days_ago', 5),
                     eval_window_days=getattr(config, 'backtest_eval_window_days', 10),
                     min_age_days=getattr(config, 'backtest_min_age_days', 14),
                     limit=200,
@@ -596,6 +604,7 @@ def main() -> int:
             stats = service.run_backtest(
                 code=getattr(args, 'backtest_code', None),
                 force=getattr(args, 'backtest_force', False),
+                days_ago=getattr(args, 'backtest_days_ago', None),
                 eval_window_days=getattr(args, 'backtest_days', None),
             )
             logger.info(

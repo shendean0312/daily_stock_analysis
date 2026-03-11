@@ -15,6 +15,8 @@ from api.v1.schemas.backtest import (
     BacktestResultItem,
     BacktestResultsResponse,
     PerformanceMetrics,
+    HistoryTrackingItem,
+    HistoryTrackingResponse,
 )
 from api.v1.schemas.common import ErrorResponse
 from src.services.backtest_service import BacktestService
@@ -156,5 +158,32 @@ def get_stock_performance(
         raise HTTPException(
             status_code=500,
             detail={"error": "internal_error", "message": f"查询单股表现失败: {str(exc)}"},
+        )
+
+
+@router.get(
+    "/history-tracking",
+    response_model=HistoryTrackingResponse,
+    responses={
+        200: {"description": "历史追踪数据"},
+        500: {"description": "服务器错误", "model": ErrorResponse},
+    },
+    summary="获取历史追踪数据",
+    description="获取近N天的分析历史与回测结果关联数据",
+)
+def get_history_tracking(
+    stock_code: Optional[str] = Query(None, description="股票代码筛选"),
+    days: int = Query(30, ge=1, le=365, description="查询天数"),
+    db_manager: DatabaseManager = Depends(get_database_manager),
+) -> HistoryTrackingResponse:
+    try:
+        service = BacktestService(db_manager)
+        items = service.get_history_tracking(code=stock_code, days=days)
+        return HistoryTrackingResponse(items=[HistoryTrackingItem(**item) for item in items])
+    except Exception as exc:
+        logger.error(f"查询历史追踪失败: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": f"查询历史追踪失败: {str(exc)}"},
         )
 

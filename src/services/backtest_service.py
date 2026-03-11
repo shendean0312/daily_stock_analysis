@@ -32,12 +32,25 @@ class BacktestService:
         *,
         code: Optional[str] = None,
         force: bool = False,
+        days_ago: Optional[int] = None,
         eval_window_days: Optional[int] = None,
         min_age_days: Optional[int] = None,
         limit: int = 200,
     ) -> Dict[str, Any]:
+        """运行回测分析。
+
+        Args:
+            code: 可选，限定股票代码
+            force: 强制重新计算已有结果
+            days_ago: 回测N天前（交易日）产生的分析记录，默认从配置读取
+            eval_window_days: 评估窗口天数，默认从配置读取
+            min_age_days: 最小历史天数，默认从配置读取
+            limit: 最大处理数量
+        """
         config = get_config()
 
+        if days_ago is None:
+            days_ago = getattr(config, "backtest_days_ago", 5)
         if eval_window_days is None:
             eval_window_days = getattr(config, "backtest_eval_window_days", 10)
         if min_age_days is None:
@@ -55,6 +68,7 @@ class BacktestService:
         candidates = self.repo.get_candidates(
             code=code,
             min_age_days=int(min_age_days),
+            days_ago=int(days_ago) if days_ago else None,
             limit=int(limit),
             eval_window_days=int(eval_window_days),
             engine_version=str(engine_version),
@@ -230,6 +244,60 @@ class BacktestService:
         if summary is None:
             return None
         return self._summary_to_dict(summary)
+
+    def get_history_tracking(self, *, code: Optional[str] = None, days: int = 30) -> List[Dict[str, Any]]:
+        """获取历史追踪数据 - 近N天的分析历史与回测结果关联"""
+        config = get_config()
+        engine_version = str(getattr(config, "backtest_engine_version", "v1"))
+        eval_window_days = getattr(config, "backtest_eval_window_days", 10)
+
+        # 获取历史记录
+        from src.repositories.analysis_repo import AnalysisRepository
+        analysis_repo = AnalysisRepository(self.db)
+        history_items = analysis_repo.get_history_list(
+            stock_code=code,
+            days=days,
+            limit=500,
+        )
+
+        # 获取回测结果（按 history_id 索引）
+        results_map: Dict[int, Dict[str, Any]] = {}
+        with self.db.get_session() as session:
+            from sqlalchemy import and_
+            from src.storage import BacktestResult
+            conditions = [
+                BacktestResult.eval_window_days == int(eval_window_days),
+                BacktestResult.engine_version == engine_version,
+            ]
+            if code:
+                conditions.append(BacktestResult.code == code)
+            rows = session.execute(
+                select(BacktestResult).where(and_(*conditions))
+            ).scalars().all()
+            for row in rows:
+                if row.analysis_history_id:
+                    results_map[row.analysis_history_id] = {
+                        "outcome": row.outcome,
+                        "simulated_return_pct": row.simulated_return_pct,
+                        "stock_return_pct": row.stock_return_pct,
+                        "eval_status": row.eval_status,
+                    }
+
+        # 关联数据
+        items = []
+        for h in history_items:
+            history_id = h.get("id")
+            backtest_result = results_map.get(history_id) if history_id else None
+            items.append({
+                "history_id": history_id,
+                "code": h.get("stock_code") or "",
+                "date": h.get("created_at", "")[:10] if h.get("created_at") else "",
+                "sentiment_score": h.get("sentiment_score"),
+                "operation_advice": h.get("operation_advice"),
+                "backtest_result": backtest_result,
+            })
+
+        return items
 
     def _resolve_analysis_date(self, analysis) -> Optional[date]:
         parsed = self.repo.parse_analysis_date_from_snapshot(analysis.context_snapshot)

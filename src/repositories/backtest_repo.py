@@ -29,16 +29,31 @@ class BacktestRepository:
         *,
         code: Optional[str],
         min_age_days: int,
+        days_ago: Optional[int] = None,
         limit: int,
         eval_window_days: int,
         engine_version: str,
         force: bool,
     ) -> List[AnalysisHistory]:
-        """Return AnalysisHistory rows eligible for backtest."""
+        """Return AnalysisHistory rows eligible for backtest.
+
+        Args:
+            min_age_days: 最小历史天数，确保有足够数据进行评估
+            days_ago: 可选，限制只获取N天前（交易日）产生的分析记录
+        """
         cutoff_dt = datetime.now() - timedelta(days=min_age_days)
 
         with self.db.get_session() as session:
             conditions = [AnalysisHistory.created_at <= cutoff_dt]
+
+            # 添加 days_ago 限制：只获取指定天数范围内的记录
+            if days_ago is not None and days_ago > 0:
+                start_dt = datetime.now() - timedelta(days=days_ago + min_age_days)
+                # 如果 days_ago 小于 min_age_days，则从 days_ago 天前开始
+                if days_ago < min_age_days:
+                    start_dt = datetime.now() - timedelta(days=days_ago)
+                conditions.append(AnalysisHistory.created_at >= start_dt)
+
             if code:
                 conditions.append(AnalysisHistory.code == code)
 

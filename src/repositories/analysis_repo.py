@@ -114,11 +114,11 @@ class AnalysisRepository:
     def count_by_code(self, code: str, days: int = 30) -> int:
         """
         统计指定股票的分析记录数
-        
+
         Args:
             code: 股票代码
             days: 时间范围（天）
-            
+
         Returns:
             记录数量
         """
@@ -128,3 +128,32 @@ class AnalysisRepository:
         except Exception as e:
             logger.error(f"统计分析记录失败: {e}")
             return 0
+
+    def get_history_list(
+        self,
+        stock_code: Optional[str] = None,
+        days: int = 30,
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """
+        获取分析记录列表（字典格式）
+
+        Args:
+            stock_code: 股票代码筛选
+            days: 时间范围（天）
+            limit: 返回数量限制
+
+        Returns:
+            字典列表，每条记录包含 id, stock_code, sentiment_score, operation_advice, created_at
+        """
+        records = self.get_list(code=stock_code, days=days, limit=limit)
+        result = []
+        for r in records:
+            result.append({
+                "id": r.id,
+                "stock_code": r.code,
+                "sentiment_score": r.sentiment_score,
+                "operation_advice": r.operation_advice,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            })
+        return result

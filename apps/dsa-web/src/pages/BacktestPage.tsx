@@ -8,7 +8,9 @@ import type {
   BacktestResultItem,
   BacktestRunResponse,
   PerformanceMetrics,
+  HistoryTrackingItem,
 } from '../types/backtest';
+import { getSentimentColor } from '../types/analysis';
 
 // ============ Helpers ============
 
@@ -31,14 +33,22 @@ function outcomeBadge(outcome?: string) {
   }
 }
 
-function statusBadge(status: string) {
+function statusBadge(status: string, analysisDate?: string) {
   switch (status) {
     case 'completed':
-      return <Badge variant="success">completed</Badge>;
-    case 'insufficient':
-      return <Badge variant="warning">insufficient</Badge>;
+      return <Badge variant="success">已完成</Badge>;
+    case 'insufficient_data': {
+      let daysHint = '';
+      if (analysisDate) {
+        const analysis = new Date(analysisDate);
+        const daysElapsed = Math.floor((Date.now() - analysis.getTime()) / (1000 * 60 * 60 * 24));
+        const daysLeft = Math.max(0, 10 - daysElapsed);
+        daysHint = daysLeft > 0 ? `还需 ${daysLeft} 天` : '待评估';
+      }
+      return <Badge variant="warning">数据不足{daysHint ? ` · ${daysHint}` : ''}</Badge>;
+    }
     case 'error':
-      return <Badge variant="danger">error</Badge>;
+      return <Badge variant="danger">错误</Badge>;
     default:
       return <Badge variant="default">{status}</Badge>;
   }
@@ -58,6 +68,50 @@ const MetricRow: React.FC<{ label: string; value: string; accent?: boolean }> = 
     <span className={`text-sm font-mono font-semibold ${accent ? 'text-cyan' : 'text-white'}`}>{value}</span>
   </div>
 );
+
+// ============ History Tracking Row ============
+
+const HistoryTrackingRow: React.FC<{ item: HistoryTrackingItem }> = ({ item }) => {
+  const returnPct = item.backtestResult?.simulatedReturnPct;
+  const outcome = item.backtestResult?.outcome;
+
+  const returnColor = returnPct != null
+    ? returnPct > 0 ? 'text-emerald-400' : returnPct < 0 ? 'text-red-400' : 'text-secondary'
+    : 'text-muted';
+
+  const outcomeVariant = outcome === 'win' ? 'success' : outcome === 'loss' ? 'danger' : outcome === 'neutral' ? 'warning' : 'default';
+
+  return (
+    <tr className="border-t border-white/5 hover:bg-hover transition-colors">
+      <td className="px-2 py-1.5 font-mono text-cyan text-xs">{item.code}</td>
+      <td className="px-2 py-1.5 text-xs text-secondary">{item.date}</td>
+      <td className="px-2 py-1.5 text-xs">
+        {item.sentimentScore != null ? (
+          <span
+            className="font-mono font-semibold text-xs px-1.5 py-0.5 rounded"
+            style={{
+              color: getSentimentColor(item.sentimentScore),
+              backgroundColor: `${getSentimentColor(item.sentimentScore)}15`
+            }}
+          >
+            {item.sentimentScore}
+          </span>
+        ) : '--'}
+      </td>
+      <td className="px-2 py-1.5 text-xs text-white truncate max-w-[120px]" title={item.operationAdvice || ''}>
+        {item.operationAdvice || '--'}
+      </td>
+      <td className="px-2 py-1.5">
+        {outcome ? <Badge variant={outcomeVariant} glow={outcome === 'win'}>{outcome.toUpperCase()}</Badge> : '--'}
+      </td>
+      <td className="px-2 py-1.5 text-xs font-mono text-right">
+        <span className={returnColor}>
+          {returnPct != null ? `${returnPct.toFixed(1)}%` : '--'}
+        </span>
+      </td>
+    </tr>
+  );
+};
 
 // ============ Performance Card ============
 
@@ -130,6 +184,10 @@ const BacktestPage: React.FC = () => {
   const [stockPerf, setStockPerf] = useState<PerformanceMetrics | null>(null);
   const [isLoadingPerf, setIsLoadingPerf] = useState(false);
 
+  // History tracking state
+  const [historyTracking, setHistoryTracking] = useState<HistoryTrackingItem[]>([]);
+  const [isLoadingTracking, setIsLoadingTracking] = useState(false);
+
   // Fetch results
   const fetchResults = useCallback(async (page = 1, code?: string, windowDays?: number) => {
     setIsLoadingResults(true);
@@ -169,6 +227,19 @@ const BacktestPage: React.FC = () => {
     }
   }, []);
 
+  // Fetch history tracking
+  const fetchHistoryTracking = useCallback(async (code?: string) => {
+    setIsLoadingTracking(true);
+    try {
+      const data = await backtestApi.getHistoryTracking({ code, days: 30 });
+      setHistoryTracking(data.items);
+    } catch (err) {
+      console.error('Failed to fetch history tracking:', err);
+    } finally {
+      setIsLoadingTracking(false);
+    }
+  }, []);
+
   // Initial load — fetch performance first, then filter results by its window
   useEffect(() => {
     const init = async () => {
@@ -181,6 +252,8 @@ const BacktestPage: React.FC = () => {
         setEvalDays(String(windowDays));
       }
       fetchResults(1, undefined, windowDays);
+      // Fetch history tracking
+      fetchHistoryTracking();
     };
     init();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -203,6 +276,7 @@ const BacktestPage: React.FC = () => {
       // Refresh data with same eval_window_days
       fetchResults(1, codeFilter.trim() || undefined, evalWindowDays);
       fetchPerformance(codeFilter.trim() || undefined, evalWindowDays);
+      fetchHistoryTracking(codeFilter.trim() || undefined);
     } catch (err) {
       setRunError(getParsedApiError(err));
     } finally {
@@ -217,6 +291,7 @@ const BacktestPage: React.FC = () => {
     setCurrentPage(1);
     fetchResults(1, code, windowDays);
     fetchPerformance(code, windowDays);
+    fetchHistoryTracking(code);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -339,6 +414,51 @@ const BacktestPage: React.FC = () => {
           {stockPerf && (
             <PerformanceCard metrics={stockPerf} title={`${stockPerf.code || codeFilter}`} />
           )}
+
+          {/* History Tracking Section */}
+          <Card padding="sm" className="animate-fade-in">
+            <div className="mb-2 flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5 text-purple" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              <span className="label-uppercase">历史追踪 (30天)</span>
+            </div>
+
+            {isLoadingTracking ? (
+              <div className="flex items-center justify-center py-4">
+                <div className="w-5 h-5 border-2 border-purple/20 border-t-purple rounded-full animate-spin" />
+              </div>
+            ) : historyTracking.length === 0 ? (
+              <p className="text-xs text-muted text-center py-3">
+                暂无追踪数据
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-muted">
+                      <th className="px-2 py-1 font-medium">代码</th>
+                      <th className="px-2 py-1 font-medium">日期</th>
+                      <th className="px-2 py-1 font-medium">评分</th>
+                      <th className="px-2 py-1 font-medium">建议</th>
+                      <th className="px-2 py-1 font-medium">结果</th>
+                      <th className="px-2 py-1 font-medium text-right">涨跌</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historyTracking.slice(0, 10).map((item) => (
+                      <HistoryTrackingRow key={`${item.code}-${item.date}-${item.historyId}`} item={item} />
+                    ))}
+                  </tbody>
+                </table>
+                {historyTracking.length > 10 && (
+                  <p className="text-xs text-muted text-center mt-2">
+                    还有 {historyTracking.length - 10} 条记录...
+                  </p>
+                )}
+              </div>
+            )}
+          </Card>
         </div>
 
         {/* Right content - Results table */}
@@ -409,7 +529,7 @@ const BacktestPage: React.FC = () => {
                         </td>
                         <td className="px-3 py-2 text-center">{boolIcon(row.hitStopLoss)}</td>
                         <td className="px-3 py-2 text-center">{boolIcon(row.hitTakeProfit)}</td>
-                        <td className="px-3 py-2">{statusBadge(row.evalStatus)}</td>
+                        <td className="px-3 py-2">{statusBadge(row.evalStatus || '', row.analysisDate || undefined)}</td>
                       </tr>
                     ))}
                   </tbody>
