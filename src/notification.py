@@ -1021,6 +1021,15 @@ class NotificationService(
                             "",
                         ])
                 
+                # 追加单只股票的历史复盘表格
+                from src.memory_patch import build_history_section
+                history_block = build_history_section(result.code, exclude_query_id=getattr(result, "query_id", None))
+                if history_block:
+                    report_lines.extend([
+                        history_block,
+                        "",
+                    ])
+                
                 report_lines.extend([
                     "---",
                     "",

@@ -14,6 +14,7 @@ import type {
 export interface GetHistoryListParams extends HistoryFilters {
   page?: number;
   limit?: number;
+  keyword?: string;
 }
 
 export const historyApi = {
@@ -22,10 +23,11 @@ export const historyApi = {
    * @param params 筛选和分页参数
    */
   getList: async (params: GetHistoryListParams = {}): Promise<HistoryListResponse> => {
-    const { stockCode, startDate, endDate, page = 1, limit = 20 } = params;
+    const { stockCode, keyword, startDate, endDate, page = 1, limit = 20 } = params;
 
     const queryParams: Record<string, string | number> = { page, limit };
     if (stockCode) queryParams.stock_code = stockCode;
+    if (keyword) queryParams.keyword = keyword;
     if (startDate) queryParams.start_date = startDate;
     if (endDate) queryParams.end_date = endDate;
 
@@ -66,5 +68,13 @@ export const historyApi = {
       total: data.total,
       items: (data.items || []).map(item => toCamelCase<NewsIntelItem>(item)),
     };
+  },
+
+  /**
+   * 获取历史报告 Markdown
+   */
+  getMarkdown: async (recordId: number): Promise<string> => {
+    const response = await apiClient.get<string>(`/api/v1/history/${recordId}/markdown`);
+    return response.data;
   },
 };

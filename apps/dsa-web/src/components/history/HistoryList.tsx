@@ -1,81 +1,77 @@
 import type React from 'react';
-import { useRef, useCallback, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import type { HistoryItem } from '../../types/analysis';
 import { getSentimentColor } from '../../types/analysis';
 import { formatDateTime } from '../../utils/format';
+import { Pagination } from '../common/Pagination';
 
 interface HistoryListProps {
   items: HistoryItem[];
   isLoading: boolean;
-  isLoadingMore: boolean;
-  hasMore: boolean;
   selectedId?: number;  // Selected history record ID
   onItemClick: (recordId: number) => void;  // Callback with record ID
-  onLoadMore: () => void;
+  keyword: string;
+  onKeywordChange: (keyword: string) => void;
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
   className?: string;
 }
 
 /**
  * 历史记录列表组件
- * 显示最近的股票分析历史，支持点击查看详情和滚动加载更多
+ * 显示最近的股票分析历史，支持搜索过滤和分页
  */
 export const HistoryList: React.FC<HistoryListProps> = ({
   items,
   isLoading,
-  isLoadingMore,
-  hasMore,
   selectedId,
   onItemClick,
-  onLoadMore,
+  keyword,
+  onKeywordChange,
+  currentPage,
+  totalPages,
+  onPageChange,
   className = '',
 }) => {
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
+  const [localKeyword, setLocalKeyword] = useState(keyword);
 
-  // 使用 IntersectionObserver 检测滚动到底部
-  const handleObserver = useCallback(
-    (entries: IntersectionObserverEntry[]) => {
-      const target = entries[0];
-      // 只有当触发器真正可见且有更多数据时才加载
-      if (target.isIntersecting && hasMore && !isLoading && !isLoadingMore) {
-        // 确保容器有滚动能力（内容超过容器高度）
-        const container = scrollContainerRef.current;
-        if (container && container.scrollHeight > container.clientHeight) {
-          onLoadMore();
-        }
-      }
-    },
-    [hasMore, isLoading, isLoadingMore, onLoadMore]
-  );
+  // 防抖处理搜索输入
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onKeywordChange(localKeyword);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [localKeyword, onKeywordChange]);
 
   useEffect(() => {
-    const trigger = loadMoreTriggerRef.current;
-    const container = scrollContainerRef.current;
-    if (!trigger || !container) return;
-
-    const observer = new IntersectionObserver(handleObserver, {
-      root: container,
-      rootMargin: '20px', // 减小预加载距离
-      threshold: 0.1, // 触发器至少 10% 可见时才触发
-    });
-
-    observer.observe(trigger);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [handleObserver]);
+    setLocalKeyword(keyword);
+  }, [keyword]);
 
   return (
     <aside className={`glass-card overflow-hidden flex flex-col ${className}`}>
-      <div ref={scrollContainerRef} className="p-3 flex-1 overflow-y-auto">
-        <h2 className="text-xs font-medium text-purple uppercase tracking-wider mb-3 flex items-center gap-1.5">
+      <div className="p-3 border-b border-white/5 shrink-0 flex flex-col gap-3">
+        <h2 className="text-xs font-medium text-purple uppercase tracking-wider flex items-center gap-1.5">
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           历史记录
         </h2>
+        <div className="relative">
+          <input
+            type="text"
+            value={localKeyword}
+            onChange={(e) => setLocalKeyword(e.target.value)}
+            placeholder="搜索代码或名称..."
+            className="input-terminal w-full pl-8 h-8 text-xs"
+          />
+          <svg className="w-3.5 h-3.5 text-muted absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </div>
+      </div>
 
+      <div className="p-3 flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="flex justify-center py-6">
             <div className="w-5 h-5 border-2 border-cyan/20 border-t-cyan rounded-full animate-spin" />
@@ -91,8 +87,7 @@ export const HistoryList: React.FC<HistoryListProps> = ({
                 key={item.id}
                 type="button"
                 onClick={() => onItemClick(item.id)}
-                className={`history-item w-full text-left ${selectedId === item.id ? 'active' : ''
-                  }`}
+                className={`history-item w-full text-left ${selectedId === item.id ? 'active' : ''}`}
               >
                 <div className="flex items-center gap-2 w-full">
                   {/* 情感分数指示条 */}
@@ -135,25 +130,16 @@ export const HistoryList: React.FC<HistoryListProps> = ({
                 </div>
               </button>
             ))}
-
-            {/* 加载更多触发器 */}
-            <div ref={loadMoreTriggerRef} className="h-4" />
-
-            {/* 加载更多状态 */}
-            {isLoadingMore && (
-              <div className="flex justify-center py-3">
-                <div className="w-4 h-4 border-2 border-cyan/20 border-t-cyan rounded-full animate-spin" />
-              </div>
-            )}
-
-            {/* 没有更多数据提示 */}
-            {!hasMore && items.length > 0 && (
-              <div className="text-center py-2 text-muted/50 text-xs">
-                已加载全部
-              </div>
-            )}
           </div>
         )}
+      </div>
+
+      <div className="p-3 border-t border-white/5 shrink-0 flex justify-center">
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={onPageChange}
+        />
       </div>
     </aside>
   );

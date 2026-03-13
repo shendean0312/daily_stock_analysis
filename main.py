@@ -525,6 +525,17 @@ def main() -> int:
     # 解析命令行参数
     args = parse_arguments()
 
+    # 修复控制台 Unicode 输出问题
+    if sys.stdout.encoding.lower() != 'utf-8':
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+        except AttributeError:
+            pass
+        try:
+            sys.stderr.reconfigure(encoding='utf-8')
+        except AttributeError:
+            pass
+
     # 加载配置（在设置日志前加载，以获取日志目录）
     config = get_config()
 

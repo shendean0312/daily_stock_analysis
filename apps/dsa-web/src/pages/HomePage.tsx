@@ -34,9 +34,9 @@ const HomePage: React.FC = () => {
 // 历史列表状态
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [searchKeyword, setSearchKeyword] = useState('');
   const pageSize = 20;
 
   // 报告详情状态
@@ -101,53 +101,42 @@ const HomePage: React.FC = () => {
 // 用 ref 追踪易变状态，避免 fetchHistory 频繁重建导致 effect 循环
   const currentPageRef = useRef(currentPage);
   currentPageRef.current = currentPage;
+  const keywordRef = useRef(searchKeyword);
+  keywordRef.current = searchKeyword;
   const historyItemsRef = useRef(historyItems);
   historyItemsRef.current = historyItems;
   const selectedReportRef = useRef(selectedReport);
   selectedReportRef.current = selectedReport;
 
   // 加载历史列表
-  const fetchHistory = useCallback(async (autoSelectFirst = false, reset = true, silent = false) => {
+  const fetchHistory = useCallback(async (targetPage = 1, autoSelectFirst = false, silent = false) => {
     if (!silent) {
-      if (reset) {
-        setIsLoadingHistory(true);
-        setCurrentPage(1);
-      } else {
-        setIsLoadingMore(true);
-      }
+      setIsLoadingHistory(true);
     }
-
-    // page is always 1 when reset=true, regardless of currentPageRef; the ref
-    // is only used for load-more (reset=false) to get the next page number.
-    const page = reset ? 1 : currentPageRef.current + 1;
 
     try {
       const response = await historyApi.getList({
+        keyword: keywordRef.current,
         startDate: getRecentStartDate(30),
         endDate: getTodayInShanghai(),
-        page,
+        page: targetPage,
         limit: pageSize,
       });
 
-      if (silent && reset) {
-        // 后台刷新：合并新增项到列表顶部，保留已加载的分页数据和滚动位置
-        setHistoryItems(prev => {
-          const existingIds = new Set(prev.map(item => item.id));
-          const newItems = response.items.filter(item => !existingIds.has(item.id));
-          return newItems.length > 0 ? [...newItems, ...prev] : prev;
-        });
-      } else if (reset) {
-        setHistoryItems(response.items);
-        setCurrentPage(1);
+      if (silent) {
+        // 后台刷新：如果是第一页，合并新增项到列表顶部
+        if (targetPage === 1) {
+          setHistoryItems(prev => {
+            const existingIds = new Set(prev.map(item => item.id));
+            const newItems = response.items.filter(item => !existingIds.has(item.id));
+            return newItems.length > 0 ? [...newItems, ...prev] : prev;
+          });
+          setTotalPages(Math.ceil(response.total / pageSize) || 1);
+        }
       } else {
-        setHistoryItems(prev => [...prev, ...response.items]);
-        setCurrentPage(page);
-      }
-
-      // 判断是否还有更多数据
-      if (!silent) {
-        const totalLoaded = reset ? response.items.length : historyItemsRef.current.length + response.items.length;
-        setHasMore(totalLoaded < response.total);
+        setHistoryItems(response.items);
+        setCurrentPage(targetPage);
+        setTotalPages(Math.ceil(response.total / pageSize) || 1);
       }
 
       // 如果需要自动选择第一条，且有数据，且当前没有选中报告
@@ -170,27 +159,24 @@ const HomePage: React.FC = () => {
       setStoreError(getParsedApiError(err));
     } finally {
       setIsLoadingHistory(false);
-      setIsLoadingMore(false);
     }
   }, [pageSize, setStoreError]);
 
-  // 加载更多历史记录
-  const handleLoadMore = useCallback(() => {
-    if (!isLoadingMore && hasMore) {
-      fetchHistory(false, false);
-    }
-  }, [fetchHistory, isLoadingMore, hasMore]);
-
   // 初始加载 - 自动选择第一条（仅挂载时执行一次）
   useEffect(() => {
-    fetchHistory(true);
+    fetchHistory(1, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 关键字变化时重新获取第一页
+  useEffect(() => {
+    fetchHistory(1, false);
+  }, [searchKeyword, fetchHistory]);
 
   // Background polling: re-fetch history every 30s for CLI-initiated analyses
   useEffect(() => {
     const interval = setInterval(() => {
-      fetchHistory(false, true, true);
+      fetchHistory(1, false, true);
     }, 30_000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -200,7 +186,7 @@ const HomePage: React.FC = () => {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        fetchHistory(false, true, true);
+        fetchHistory(1, false, true);
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -289,11 +275,13 @@ const HomePage: React.FC = () => {
       <HistoryList
         items={historyItems}
         isLoading={isLoadingHistory}
-        isLoadingMore={isLoadingMore}
-        hasMore={hasMore}
         selectedId={selectedReport?.meta.id}
         onItemClick={(id) => { handleHistoryClick(id); setSidebarOpen(false); }}
-        onLoadMore={handleLoadMore}
+        keyword={searchKeyword}
+        onKeywordChange={(val) => { setSearchKeyword(val); setCurrentPage(1); }}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={(page) => fetchHistory(page)}
         className="max-h-[62vh] md:max-h-[62vh] flex-1 overflow-hidden"
       />
     </div>
@@ -357,6 +345,24 @@ const HomePage: React.FC = () => {
               '分析'
             )}
           </button>
+          
+          <button
+            disabled={!selectedReport || selectedReport.meta.id === undefined}
+            onClick={() => {
+              if (!selectedReport) return;
+              const code = selectedReport.meta.stockCode;
+              const name = selectedReport.meta.stockName;
+              const rid = selectedReport.meta.id!;
+              navigate(`/chat?stock=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}&recordId=${rid}`);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan/10 border border-cyan/20 text-cyan text-sm hover:bg-cyan/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap flex-shrink-0"
+            title={!selectedReport ? "请先选择一份报告" : "基于当前报告追问 AI"}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            追问 AI
+          </button>
         </div>
       </header>
 
@@ -393,24 +399,6 @@ const HomePage: React.FC = () => {
           </div>
         ) : selectedReport ? (
           <div className="max-w-4xl">
-            {/* Follow-up button */}
-            <div className="flex items-center justify-end mb-2">
-              <button
-                disabled={selectedReport.meta.id === undefined}
-                onClick={() => {
-                  const code = selectedReport.meta.stockCode;
-                  const name = selectedReport.meta.stockName;
-                  const rid = selectedReport.meta.id!;
-                  navigate(`/chat?stock=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}&recordId=${rid}`);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan/10 border border-cyan/20 text-cyan text-sm hover:bg-cyan/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-                追问 AI
-              </button>
-            </div>
             <ReportSummary data={selectedReport} isHistory />
           </div>
         ) : (

@@ -146,6 +146,13 @@ def render(
     def failed_checks(checklist: List[str]) -> List[str]:
         return [c for c in (checklist or []) if c.startswith("❌") or c.startswith("⚠️")]
 
+    from src.memory_patch import build_history_section
+    history_blocks = {}
+    for r in results:
+        block = build_history_section(r.code, exclude_query_id=getattr(r, "query_id", None))
+        if block:
+            history_blocks[r.code] = block
+
     context: Dict[str, Any] = {
         "report_date": report_date,
         "report_timestamp": report_timestamp,
@@ -159,6 +166,7 @@ def render(
         "clean_sniper": _clean_sniper_value,
         "failed_checks": failed_checks,
         "history_by_code": {},
+        "history_blocks": history_blocks,
     }
     if extra_context:
         context.update(extra_context)

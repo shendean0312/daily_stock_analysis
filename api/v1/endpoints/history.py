@@ -48,6 +48,7 @@ router = APIRouter()
 )
 def get_history_list(
     stock_code: Optional[str] = Query(None, description="股票代码筛选"),
+    keyword: Optional[str] = Query(None, description="关键词筛选"),
     start_date: Optional[str] = Query(None, description="开始日期 (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="结束日期 (YYYY-MM-DD)"),
     page: int = Query(1, ge=1, description="页码（从 1 开始）"),
@@ -61,6 +62,7 @@ def get_history_list(
     
     Args:
         stock_code: 股票代码筛选
+        keyword: 关键词筛选
         start_date: 开始日期
         end_date: 结束日期
         page: 页码
@@ -76,6 +78,7 @@ def get_history_list(
         # 使用 def 而非 async def，FastAPI 自动在线程池中执行
         result = service.get_history_list(
             stock_code=stock_code,
+            keyword=keyword,
             start_date=start_date,
             end_date=end_date,
             page=page,
@@ -206,10 +209,17 @@ def get_history_detail(
             take_profit=result.get("take_profit")
         )
         
+        from src.memory_patch import build_history_section
+        history_block = build_history_section(
+            result.get("stock_code"), 
+            exclude_query_id=result.get("query_id")
+        )
+
         details = ReportDetails(
             news_content=result.get("news_content"),
             raw_result=result.get("raw_result"),
-            context_snapshot=result.get("context_snapshot")
+            context_snapshot=result.get("context_snapshot"),
+            history_block=history_block
         )
         
         return AnalysisReport(
@@ -231,6 +241,99 @@ def get_history_detail(
             }
         )
 
+
+from fastapi.responses import PlainTextResponse
+
+@router.get(
+    "/{record_id}/markdown",
+    response_class=PlainTextResponse,
+    responses={
+        200: {"description": "Markdown 格式的报告内容"},
+        404: {"description": "报告不存在", "model": ErrorResponse},
+        500: {"description": "服务器错误", "model": ErrorResponse},
+    },
+    summary="获取单只股票的完整 Markdown 报告",
+    description="获取指定记录的单股全量 Markdown 报告"
+)
+def get_history_markdown(
+    record_id: str,
+    db_manager: DatabaseManager = Depends(get_database_manager)
+) -> str:
+    """
+    获取历史报告 Markdown
+    """
+    try:
+        service = HistoryService(db_manager)
+        result_dict = service.resolve_and_get_detail(record_id)
+        
+        if result_dict is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "not_found",
+                    "message": f"未找到 id/query_id={record_id} 的分析记录"
+                }
+            )
+            
+        from api.v1.endpoints.analysis import _build_analysis_report
+        # 构建 AnalysisReport (Pydantic model) -> 转换为旧版的 AnalysisResult 用于 NotificationService
+        # 但其实 NotificationService 需要的是 src.analyzer.AnalysisResult 对象。
+        from src.analyzer import AnalysisResult
+        
+        # We can construct a mock AnalysisResult from the DB record directly
+        record = service._resolve_record(record_id)
+        ar = AnalysisResult(
+            code=record.code,
+            name=record.name,
+            sentiment_score=record.sentiment_score,
+            operation_advice=record.operation_advice,
+            trend_prediction=record.trend_prediction,
+            analysis_summary=record.analysis_summary,
+            success=True
+        )
+        # Parse dashboard from raw_result
+        if record.raw_result:
+            import json
+            try:
+                raw = json.loads(record.raw_result)
+                ar.dashboard = raw.get("dashboard") or raw
+                ar.decision_type = ar.dashboard.get("decision_type", "")
+                ar.buy_reason = ar.dashboard.get("buy_reason", "")
+                ar.risk_warning = ar.dashboard.get("risk_warning", "")
+            except Exception:
+                pass
+                
+        # Fill sniper points
+        ar.ideal_buy = record.ideal_buy
+        ar.secondary_buy = record.secondary_buy
+        ar.stop_loss = record.stop_loss
+        ar.take_profit = record.take_profit
+        
+        from src.notification import NotificationService
+        ns = NotificationService()
+        
+        # Use single stock report generator
+        md_content = ns.generate_single_stock_report(ar)
+        
+        # Append history table
+        from src.memory_patch import build_history_section
+        history_block = build_history_section(ar.code, exclude_query_id=record.query_id)
+        if history_block:
+            md_content += f"\n\n{history_block}"
+            
+        return md_content
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"生成 Markdown 报告失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "internal_error",
+                "message": f"生成 Markdown 报告失败: {str(e)}"
+            }
+        )
 
 @router.get(
     "/{record_id}/news",

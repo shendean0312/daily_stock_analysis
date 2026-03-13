@@ -1052,6 +1052,7 @@ class GeminiAnalyzer:
 
 ## ✅ 分析任务
 
+请确保报告中所有的指标字段名称、专业术语均使用规范的中文表述（例如：市盈率、支撑位、阻力位、乖离率等，拒绝中英混排）。
 请为 **{stock_name}({code})** 生成【决策仪表盘】，严格按照 JSON 格式输出。
 """
         if context.get('is_index_etf'):

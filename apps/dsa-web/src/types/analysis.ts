@@ -52,6 +52,7 @@ export interface ReportDetails {
   newsContent?: string;
   rawResult?: Record<string, unknown>;
   contextSnapshot?: Record<string, unknown>;
+  historyBlock?: string;
 }
 
 /** 完整分析报告 */

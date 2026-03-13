@@ -845,6 +845,7 @@ class DatabaseManager:
     def get_analysis_history_paginated(
         self,
         code: Optional[str] = None,
+        keyword: Optional[str] = None,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         offset: int = 0,
@@ -855,6 +856,7 @@ class DatabaseManager:
         
         Args:
             code: 股票代码筛选
+            keyword: 关键词筛选 (匹配代码或名称)
             start_date: 开始日期（含）
             end_date: 结束日期（含）
             offset: 偏移量（跳过前 N 条）
@@ -863,13 +865,19 @@ class DatabaseManager:
         Returns:
             Tuple[List[AnalysisHistory], int]: (记录列表, 总数)
         """
-        from sqlalchemy import func
+        from sqlalchemy import func, or_
         
         with self.get_session() as session:
             conditions = []
             
             if code:
                 conditions.append(AnalysisHistory.code == code)
+            if keyword:
+                search_term = f"%{keyword}%"
+                conditions.append(or_(
+                    AnalysisHistory.code.like(search_term),
+                    AnalysisHistory.name.like(search_term)
+                ))
             if start_date:
                 # created_at >= start_date 00:00:00
                 conditions.append(AnalysisHistory.created_at >= datetime.combine(start_date, datetime.min.time()))

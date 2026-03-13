@@ -39,6 +39,7 @@ class HistoryService:
     def get_history_list(
         self,
         stock_code: Optional[str] = None,
+        keyword: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         page: int = 1,
@@ -46,14 +47,15 @@ class HistoryService:
     ) -> Dict[str, Any]:
         """
         获取历史分析列表
-        
+
         Args:
             stock_code: 股票代码筛选
+            keyword: 关键词筛选 (匹配代码或名称)
             start_date: 开始日期 (YYYY-MM-DD)
             end_date: 结束日期 (YYYY-MM-DD)
             page: 页码
             limit: 每页数量
-            
+
         Returns:
             包含 total, items 的字典
         """
@@ -80,15 +82,28 @@ class HistoryService:
             # 使用新的分页查询方法
             records, total = self.db.get_analysis_history_paginated(
                 code=stock_code,
+                keyword=keyword,
                 start_date=start_dt,
                 end_date=end_dt,
                 offset=offset,
                 limit=limit
             )
-            
+
+            # 内存去重：同一天只保留最新的一条记录
+            daily_latest = {}
+            deduped_records = []
+            for r in records:
+                if not r.created_at:
+                    continue
+                date_str = r.created_at.strftime("%Y-%m-%d")
+                # 只保留每天最新的记录
+                if date_str not in daily_latest:
+                    daily_latest[date_str] = r
+                    deduped_records.append(r)
+
             # 转换为响应格式
             items = []
-            for record in records:
+            for record in deduped_records:
                 items.append({
                     "id": record.id,
                     "query_id": record.query_id,

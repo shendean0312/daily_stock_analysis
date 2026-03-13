@@ -1100,8 +1100,10 @@ class StockAnalysisPipeline:
             logger.info("生成决策仪表盘日报...")
             report = self._generate_aggregate_report(results, report_type)
             
+            final_report = report + "\n\n---\n\n> ⚠️ **风险提示**：本报告由 AI 自动生成，仅供技术研究和参考，不构成任何专业的投资建议。市场有风险，入市需谨慎。"
+
             # 保存到本地
-            filepath = self.notifier.save_report_to_file(report)
+            filepath = self.notifier.save_report_to_file(final_report)
             logger.info(f"决策仪表盘日报已保存: {filepath}")
             
             # 跳过推送（单股推送模式）
